@@ -1,0 +1,101 @@
+#include <iostream>
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<errno.h>
+#include<signal.h>
+#include<iostream>
+#include<stdlib.h>
+#include<string.h>
+#include<stdio.h>
+#include<unistd.h>
+using namespace std;
+const int MAXFD = 20;
+const int MAXLINE = 100;
+int main()
+{
+    int listenfd,connfd,sockfd,maxfd;
+    int nready,i,maxi;
+    ssize_t n;
+    socklen_t clilen;
+    int client[MAXFD];
+    char buf[MAXLINE];
+    fd_set rset,allset;
+    for(i=0;i<MAXFD;++i)
+        client[i] = -1;
+    sockaddr_in servaddr,cliaddr;
+    listenfd = socket(AF_INET,SOCK_STREAM,0);
+    bzero(&servaddr,sizeof(servaddr));
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(9878);
+    int bret=bind(listenfd,(sockaddr*)&servaddr,sizeof(servaddr));
+    cout<<bret<<endl;//bret =0;
+    int lret= listen(listenfd,100);
+    cout<<lret<<endl;//lret = 0;
+    cout<<"server start     fd  =  "<<listenfd<<endl;//listenfd = 3;
+    //cout<<inet_ntoa(servaddr.sin_addr)<<"   "<<ntohs(servaddr.sin_port)<<endl;
+    for(;;){
+        clilen = sizeof(cliaddr);
+        connfd  = accept(listenfd,(sockaddr*)&cliaddr,&clilen);
+        cout<<"connection from "<<inet_ntoa(cliaddr.sin_addr)<<"   port   "<<ntohs(cliaddr.sin_port)<<endl;
+       if((n=read(connfd,buf,MAXLINE))<0){
+            cout<<strerror(errno)<<endl;
+            exit(0);
+        }else if(n==0){
+            cout<<"finish"<<endl;
+            close(connfd);
+        }else
+            write(connfd,buf,n);
+    }
+    /*
+    maxfd = listenfd;
+    maxi = -1;
+    FD_ZERO(&allset);
+    FD_SET(listenfd,&allset);
+    for(;;){
+        rset = allset;
+        nready = select(maxfd+1,&rset,NULL,NULL,NULL);
+        if(FD_ISSET(listenfd,&rset)){
+            cout<<"listenfd is readable"<<endl;
+            clilen = sizeof(cliaddr);
+            connfd = accept(listenfd,(sockaddr*)&cliaddr,&clilen);
+            cout<<"new fd added to client-->"<<cliaddr.sin_addr.s_addr<<endl;
+            for(i=0;i<MAXFD;i++)
+                    if(client[i]==-1){
+                        client[i] =connfd;
+                        break;
+                    }
+                    if(i==MAXFD){
+                        cout<<"too many client"<<endl;
+                        return 0;
+                    }
+                    FD_SET(connfd,&allset);
+                    if(connfd>maxfd)
+                        maxfd = connfd;
+                    if(i>maxi)
+                        maxi = i;
+
+                cout<<"maxi =  "<<maxi<<endl;
+                    if(--nready>0)
+                        continue;
+        }
+        for(i=0;i<=maxi;++i){
+            if((sockfd = client[i])<0)
+                continue;
+            if(FD_ISSET(sockfd,&rset)){
+                if((n=read(sockfd,buf,MAXLINE))==0){
+                    close(sockfd);
+                    FD_CLR(sockfd,&allset);
+                    client[i] = -1;
+                }else{
+                    cout<<"read ->"<<buf<<endl;
+                    write(sockfd,buf,n);
+                }
+            }
+            if(--nready<=0)
+                break;
+        }
+    }*/
+    return 0;
+}

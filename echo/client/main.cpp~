@@ -1,0 +1,138 @@
+#include <iostream>
+#include <iostream>
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<errno.h>
+#include<signal.h>
+#include<iostream>
+#include<stdlib.h>
+#include<string.h>
+#include<stdio.h>
+#include<unistd.h>
+#include<fcntl.h>
+using namespace std;
+const int STD_IN_FD = 0;
+const int STD_OUT_FD = 1;
+const int MAXLINE = 100;
+void str_cli(istream&,int);
+//static void connect_alarm(int signo){return;}
+typedef void Sigfunc(int);
+int main()
+{
+    int sockfd;
+    sockaddr_in servaddr;
+    sockfd = socket(AF_INET,SOCK_STREAM,0);
+    bzero(&servaddr,sizeof(servaddr));
+    servaddr.sin_port = htons(10066);
+    inet_pton(AF_INET,"127.0.0.1",&servaddr.sin_addr);
+   // sigemptyset(&act.sa_mask);
+    //act.sa_handler = &connect_alarm;
+    //sigaction(SIGALRM,&act,&oact);
+    //alarm(5);
+    int ret = connect(sockfd,(sockaddr*)&servaddr,sizeof(servaddr));
+    cout<<ret<<endl;
+    cout<<inet_addr("127.0.0.1")<<endl;
+    cout<<servaddr.sin_addr.s_addr<<"    "<<servaddr.sin_port<<endl;
+    str_cli(cin,sockfd);
+    system("pause");
+    return 0;
+}
+void str_cli(istream& in,int sockfd){
+    char to[MAXLINE],fr[MAXLINE];
+    char *toiptr,*tooptr,*friptr,*froptr;
+    fd_set rset,wset;
+    int maxfdp1,val,stdineof;
+    ssize_t n,nwrite;
+    val = fcntl(STD_IN_FD,F_GETFL,0);
+    fcntl(STD_IN_FD,F_SETFL,val|O_NONBLOCK);
+    val = fcntl(STD_OUT_FD,F_GETFL,0);
+    fcntl(STD_OUT_FD,F_SETFL,val|O_NONBLOCK);
+    val = fcntl(sockfd,F_GETFL,0);
+    fcntl(sockfd,F_SETFL,val|O_NONBLOCK);
+    tooptr = toiptr = to;
+    froptr = friptr = fr;
+    stdineof=0;
+    maxfdp1 = max(max(STD_IN_FD,STD_OUT_FD),sockfd)+1;
+    for(;;){
+        FD_ZERO(&rset);
+        FD_ZERO(&wset);
+        if(stdineof==0&&toiptr<&to[MAXLINE])//当未读完且缓存区还有空间
+            FD_SET(STD_IN_FD,&rset);
+        if(tooptr!=toiptr)//当缓存区中还有数据未发送
+            FD_SET(sockfd,&wset);
+        if(friptr<&fr[MAXLINE])//当读缓冲区还有空间
+            FD_SET(STD_OUT_FD,&wset);
+        if(froptr!=friptr)//当缓冲区还有数据没读
+            FD_SET(sockfd,&rset);
+        select(maxfdp1,&rset,&wset,NULL,NULL);
+        if(FD_ISSET(STD_IN_FD,&rset)){
+            if((n=read(STD_IN_FD,toiptr,&to[MAXLINE]-toiptr))<0){
+                if(errno!=EWOULDBLOCK){
+                    cout<<"stdin error"<<endl;
+                    return;
+                }
+            }
+                else if(n==0){
+                    cout<<"stdineof"<<endl;
+                    stdineof = 1;
+                    if(tooptr == toiptr)
+                        shutdown(sockfd,SHUT_WR);//当标准输入读完且缓冲区也发完
+                }
+            else{
+                cout<<"stdin success"<<toiptr<<endl;
+                toiptr+=n;
+                FD_SET(sockfd,&wset);
+            }
+        }
+        if(FD_ISSET(sockfd,&rset)){
+            if((n=read(sockfd,friptr,&fr[MAXLINE]-friptr))<0){
+                if(errno!=EWOULDBLOCK){
+                    cout<<"socket read error"<<endl;
+                    return;
+                }
+            }
+                else if(n==0){
+                    if(stdineof==1)
+                        return;
+                    else {
+                        cout<<"server shutdown"<<endl;
+                        return;
+                    }
+                }else{
+                    friptr+=n;
+                    FD_SET(STD_OUT_FD,&wset);
+                }
+        }
+        if(FD_ISSET(STD_OUT_FD,&wset) && ( (n=friptr-froptr)>0) ){
+                if((nwrite = write(STD_OUT_FD,froptr,n))<0){
+                    if(errno != EWOULDBLOCK){
+                        cout<<"stdout error"<<endl;
+                        return;
+                    }
+                }
+                else{
+                    froptr+=nwrite;
+                    if(froptr==friptr)
+                        froptr = friptr = fr;
+                }
+           }
+        if((FD_ISSET(sockfd,&wset))&& (   (n=toiptr-tooptr)>0  )  ){
+            if((nwrite =write(sockfd,tooptr,n))<0){
+                if(errno != EWOULDBLOCK){
+                    cout<<"sock write error1111111111111111111111"<<errno<<endl;
+                   return;
+                }
+            }
+            else{
+                tooptr+=nwrite;
+                if(tooptr == toiptr){
+                    tooptr = toiptr = to;
+                    if(stdineof)
+                        shutdown(sockfd,SHUT_RD);
+                }
+            }
+        }
+    }
+ }
